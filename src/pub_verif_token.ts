@@ -192,19 +192,19 @@ export class Issuer {
 }
 
 // TODO? a "Client" that can only handle one request at once and that does not actually
-// perform any requests itself, seems a bit odd?
-export class TokenRequestContext {
-    private finData?: {
-        pkIssuer: CryptoKey;
-        tokenInput: Uint8Array;
-        authInput: AuthenticatorInput;
-        inv: Uint8Array;
-    };
+type ClientState = {
+    pkIssuer: CryptoKey;
+    tokenInput: Uint8Array;
+    authInput: AuthenticatorInput;
+    inv: Uint8Array;
+};
 
+// perform any requests itself, seems a bit odd?
+export class Client {
     async createRequest(
         tokChl: TokenChallenge,
         issuerPublicKey: Uint8Array,
-    ): Promise<TokenRequest> {
+    ): Promise<[finData: ClientState, request: TokenRequest]> {
         const nonce = crypto.getRandomValues(new Uint8Array(32));
         const challengeDigest = new Uint8Array(
             await crypto.subtle.digest('SHA-256', tokChl.serialize()),
@@ -227,10 +227,7 @@ export class TokenRequestContext {
         // last 8 bits of token_key_id).
         const truncatedTokenKeyId = tokenKeyId[tokenKeyId.length - 1];
         const tokenRequest = new TokenRequest(truncatedTokenKeyId, blindedMsg);
-
-        this.finData = { tokenInput, authInput, inv, pkIssuer };
-
-        return tokenRequest;
+        return [{ tokenInput, authInput, inv, pkIssuer }, tokenRequest];
     }
 
     private suite: BlindRSA;
@@ -239,21 +236,13 @@ export class TokenRequestContext {
         this.suite = BLIND_RSA.suite[this.mode]();
     }
 
-    async finalize(tokRes: TokenResponse): Promise<Token> {
-        if (!this.finData) {
-            throw new Error('no token request was created yet');
-        }
-
+    async finalize(state: ClientState, tokRes: TokenResponse): Promise<Token> {
         const authenticator = await this.suite.finalize(
-            this.finData.pkIssuer,
-            this.finData.tokenInput,
+            state.pkIssuer,
+            state.tokenInput,
             tokRes.blindSig,
-            this.finData.inv,
+            state.inv,
         );
-        const token = new Token(BLIND_RSA, this.finData.authInput, authenticator);
-
-        this.finData = undefined;
-
-        return token;
+        return new Token(BLIND_RSA, state.authInput, authenticator);
     }
 }

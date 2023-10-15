@@ -192,6 +192,7 @@ export class Issuer {
 }
 
 // TODO? a "Client" that can only handle one request at once and that does not actually
+// perform any requests itself, seems a bit odd?
 type ClientState = {
     pkIssuer: CryptoKey;
     tokenInput: Uint8Array;
@@ -199,8 +200,13 @@ type ClientState = {
     inv: Uint8Array;
 };
 
-// perform any requests itself, seems a bit odd?
 export class Client {
+    private suite: BlindRSA;
+
+    constructor(public readonly mode: BlindRSAMode = BlindRSAMode.PSSZero) {
+        this.suite = BLIND_RSA.suite[this.mode]();
+    }
+
     async createRequest(
         tokChl: TokenChallenge,
         issuerPublicKey: Uint8Array,
@@ -228,12 +234,6 @@ export class Client {
         const truncatedTokenKeyId = tokenKeyId[tokenKeyId.length - 1];
         const tokenRequest = new TokenRequest(truncatedTokenKeyId, blindedMsg);
         return [{ tokenInput, authInput, inv, pkIssuer }, tokenRequest];
-    }
-
-    private suite: BlindRSA;
-
-    constructor(public readonly mode: BlindRSAMode = BlindRSAMode.PSSZero) {
-        this.suite = BLIND_RSA.suite[this.mode]();
     }
 
     async finalize(state: ClientState, tokRes: TokenResponse): Promise<Token> {

@@ -254,7 +254,6 @@ export class Client2 {
             // oprf facade use objects with leaf nodes as bytes for any packets that will go
             // on the wire
             evaluated: [tokRes.evaluateMsg],
-            mode: Oprf.Mode.VOPRF,
             proof: tokRes.evaluateProof,
         });
         return new Token(VOPRF, state.authInput, authenticator);

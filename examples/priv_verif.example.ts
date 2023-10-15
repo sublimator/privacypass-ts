@@ -29,13 +29,13 @@ export async function privateVerifiableTokens(): Promise<void> {
     //     +-- TokenChallenge -->|                   |           |
     //     |                     |<== Attestation ==>|           |
     //     |                     |                   |           |
-    const [tokReq, state] = await client.createTokenRequest(tokChl);
+    const [state, tokReq] = await client.createTokenRequest(tokChl);
     //     |                     +--------- TokenRequest ------->|
     //     |                     |                   |           |
     const tokRes = await issuer.issue(tokReq);
     //     |                     |<-------- TokenResponse -------+
     //     |                     |                   |           |
-    const token = await client.finalize(tokRes, state);
+    const token = await client.finalize(state, tokRes);
     //     |<-- Request+Token ---+                   |           |
     //     |                     |                   |           |
     const isValid = await issuer.verify(token);

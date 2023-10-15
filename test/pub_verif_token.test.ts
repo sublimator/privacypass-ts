@@ -5,7 +5,7 @@ import { jest } from '@jest/globals';
 import { base64 } from 'rfc4648';
 
 import {
-    Client,
+    TokenRequestContext,
     Issuer,
     TokenRequest,
     TokenResponse,
@@ -73,8 +73,8 @@ test.each(vectors)('PublicVerifiable-Vector-%#', async (v: Vectors) => {
         .mockReturnValueOnce(salt)
         .mockReturnValueOnce(blind);
 
-    const client = new Client(mode);
-    const tokReq = await client.createTokenRequest(tokChl, publicKeyEnc);
+    const client = new TokenRequestContext(mode);
+    const tokReq = await client.createRequest(tokChl, publicKeyEnc);
     testSerialize(TokenRequest, tokReq);
 
     const tokReqSer = tokReq.serialize();

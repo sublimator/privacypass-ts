@@ -3,7 +3,7 @@
 
 import { AuthorizationHeader, WWWAuthenticateHeader } from './auth_scheme/private_token.js';
 import { Client2, TokenResponse2 } from './priv_verif_token.js';
-import { Client, TokenResponse } from './pub_verif_token.js';
+import { TokenRequestContext, TokenResponse } from './pub_verif_token.js';
 
 // https://datatracker.ietf.org/doc/html/draft-ietf-privacypass-protocol-16#name-well-known-private-token-is
 export const PRIVATE_TOKEN_ISSUER_DIRECTORY = '/.well-known/private-token-issuer-directory';
@@ -87,8 +87,8 @@ export async function issuanceProtocolPub(
     header: WWWAuthenticateHeader,
 ): Promise<AuthorizationHeader> {
     const issuerUrl = await getIssuerUrl(header.challenge.issuerName);
-    const client = new Client();
-    const tokReq = await client.createTokenRequest(header.challenge, header.tokenKey);
+    const client = new TokenRequestContext();
+    const tokReq = await client.createRequest(header.challenge, header.tokenKey);
     const { tokResBytes } = await sendTokenRequest(tokReq.serialize(), issuerUrl);
     const tokRes = TokenResponse.deserialize(tokResBytes);
     const token = await client.finalize(tokRes);
@@ -100,9 +100,9 @@ export async function issuanceProtocolPriv(
 ): Promise<AuthorizationHeader> {
     const issuerUrl = await getIssuerUrl(header.challenge.issuerName);
     const client = new Client2(header.tokenKey);
-    const [tokReq, state] = await client.createTokenRequest(header.challenge);
+    const [state, tokReq] = await client.createTokenRequest(header.challenge);
     const { tokResBytes } = await sendTokenRequest(tokReq.serialize(), issuerUrl);
     const tokRes = TokenResponse2.deserialize(tokResBytes);
-    const token = await client.finalize(tokRes, state);
+    const token = await client.finalize(state, tokRes);
     return new AuthorizationHeader(token);
 }

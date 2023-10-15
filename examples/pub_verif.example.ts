@@ -3,7 +3,7 @@
 
 import {
     verifyToken,
-    Client,
+    TokenRequestContext,
     Issuer,
     keyGen,
     TOKEN_TYPES,
@@ -24,7 +24,7 @@ async function rsaVariant(mode: BlindRSAMode): Promise<void> {
     const pkIssuer = await getPublicKeyBytes(issuer.publicKey);
 
     // [ Client ] creates a state.
-    const client = new Client(mode);
+    const client = new TokenRequestContext(mode);
 
     // Online Protocol
     //
@@ -39,7 +39,7 @@ async function rsaVariant(mode: BlindRSAMode): Promise<void> {
     //     +-- TokenChallenge -->|                   |           |
     //     |                     |<== Attestation ==>|           |
     //     |                     |                   |           |
-    const tokReq = await client.createTokenRequest(tokChl, pkIssuer);
+    const tokReq = await client.createRequest(tokChl, pkIssuer);
     //     |                     +--------- TokenRequest ------->|
     //     |                     |                   |           |
     const tokRes = await issuer.issue(tokReq);

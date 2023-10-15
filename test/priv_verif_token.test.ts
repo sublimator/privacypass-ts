@@ -38,7 +38,7 @@ test.each(vectors)('PrivateVerifiable-Vector-%#', async (v: Vectors) => {
         Promise.resolve(TOKEN_TYPES.VOPRF.group.desScalar(blind)),
     );
 
-    const [tokReq, state] = await client.createTokenRequest(tokChl);
+    const [state, tokReq] = await client.createTokenRequest(tokChl);
     testSerialize(TokenRequest2, tokReq);
 
     const tokReqSer = tokReq.serialize();
@@ -57,7 +57,7 @@ test.each(vectors)('PrivateVerifiable-Vector-%#', async (v: Vectors) => {
         hexToUint8(v.token_response).slice(0, VOPRF.Ne),
     );
 
-    const token = await client.finalize(tokRes, state);
+    const token = await client.finalize(state, tokRes);
     testSerializeType(TOKEN_TYPES.VOPRF, Token, token);
 
     const tokenSer = token.serialize();

@@ -85,6 +85,7 @@ export class TokenRequest {
     // } TokenRequest;
 
     tokenType: number;
+
     constructor(
         public readonly truncatedTokenKeyId: number,
         public readonly blindedMsg: Uint8Array,
@@ -190,7 +191,9 @@ export class Issuer {
     }
 }
 
-export class Client {
+// TODO? a "Client" that can only handle one request at once and that does not actually
+// perform any requests itself, seems a bit odd?
+export class TokenRequestContext {
     private finData?: {
         pkIssuer: CryptoKey;
         tokenInput: Uint8Array;
@@ -198,13 +201,7 @@ export class Client {
         inv: Uint8Array;
     };
 
-    private suite: BlindRSA;
-
-    constructor(public readonly mode: BlindRSAMode = BlindRSAMode.PSSZero) {
-        this.suite = BLIND_RSA.suite[this.mode]();
-    }
-
-    async createTokenRequest(
+    async createRequest(
         tokChl: TokenChallenge,
         issuerPublicKey: Uint8Array,
     ): Promise<TokenRequest> {
@@ -234,6 +231,12 @@ export class Client {
         this.finData = { tokenInput, authInput, inv, pkIssuer };
 
         return tokenRequest;
+    }
+
+    private suite: BlindRSA;
+
+    constructor(public readonly mode: BlindRSAMode = BlindRSAMode.PSSZero) {
+        this.suite = BLIND_RSA.suite[this.mode]();
     }
 
     async finalize(tokRes: TokenResponse): Promise<Token> {

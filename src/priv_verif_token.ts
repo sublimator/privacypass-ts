@@ -7,9 +7,9 @@ import {
     type Group,
     type HashID,
     type ModeVoprf,
+    Oprf,
     type Server,
     type SuiteID,
-    Oprf,
 } from '@cloudflare/voprf-ts/facade';
 
 import { joinAll } from './util.js';
@@ -32,7 +32,10 @@ export interface VOPRFExtraParams {
 
 const VOPRF_SUITE = Oprf.Suite.P384_SHA384;
 
-const MODE = Oprf.makeMode({ suite: VOPRF_SUITE, mode: Oprf.Mode.VOPRF });
+const MODE = Oprf.makeMode({
+    suite: VOPRF_SUITE,
+    mode: Oprf.Mode.VOPRF,
+});
 
 const VOPRF_EXTRA_PARAMS: VOPRFExtraParams = {
     suite: VOPRF_SUITE,
@@ -206,13 +209,15 @@ interface Client2State {
 }
 
 export class Client2 {
-    vClient: Client<ModeVoprf>;
+    private vClient: Client<ModeVoprf>;
 
     constructor(private issuerPublicKey: Uint8Array) {
         this.vClient = MODE.makeClient(issuerPublicKey);
     }
 
-    async createTokenRequest(tokChl: TokenChallenge): Promise<[TokenRequest2, Client2State]> {
+    async createTokenRequest(
+        tokChl: TokenChallenge,
+    ): Promise<[finData: Client2State, request: TokenRequest2]> {
         const nonce = crypto.getRandomValues(new Uint8Array(32));
         const challengeDigest = new Uint8Array(
             await crypto.subtle.digest('SHA-256', tokChl.serialize()),
@@ -232,6 +237,7 @@ export class Client2 {
         if (evalReq.blinded.length !== 1) {
             throw new Error('created a non-single blinded element');
         }
+        // already serialized, what else would you do with a request?
         const blindedMsg = evalReq.blinded[0];
 
         // "truncated_token_key_id" is the least significant byte of the
@@ -240,11 +246,13 @@ export class Client2 {
         const truncatedTokenKeyId = tokenKeyId[tokenKeyId.length - 1];
         const tokenRequest = new TokenRequest2(truncatedTokenKeyId, blindedMsg);
 
-        return [tokenRequest, { authInput, finData }];
+        return [{ authInput, finData }, tokenRequest];
     }
 
-    async finalize(tokRes: TokenResponse2, state: Client2State): Promise<Token> {
+    async finalize(state: Client2State, tokRes: TokenResponse2): Promise<Token> {
         const [authenticator] = await this.vClient.finalize(state.finData, {
+            // oprf facade use objects with leaf nodes as bytes for any packets that will go
+            // on the wire
             evaluated: [tokRes.evaluateMsg],
             mode: Oprf.Mode.VOPRF,
             proof: tokRes.evaluateProof,

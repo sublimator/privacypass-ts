@@ -2,19 +2,15 @@
 // Licensed under the Apache-2.0 license found in the LICENSE file or at https://opensource.org/licenses/Apache-2.0
 
 import {
-    Evaluation,
-    EvaluationRequest,
-    FinalizeData,
-    Oprf,
-    VOPRFClient,
-    VOPRFServer,
-    generateKeyPair,
-    type DLEQParams,
+    type Client,
+    type FinalizeData,
     type Group,
-    type SuiteID,
     type HashID,
-    DLEQProof,
-} from '@cloudflare/voprf-ts';
+    type ModeVoprf,
+    type Server,
+    type SuiteID,
+    Oprf,
+} from '@cloudflare/voprf-ts/facade';
 
 import { joinAll } from './util.js';
 import {
@@ -30,26 +26,22 @@ export interface VOPRFExtraParams {
     Ne: number;
     Ns: number;
     Nk: number;
+    // Np: number;
     hash: HashID;
-    dleqParams: DLEQParams;
 }
 
 const VOPRF_SUITE = Oprf.Suite.P384_SHA384;
-const VOPRF_GROUP = Oprf.getGroup(VOPRF_SUITE);
-const VOPRF_HASH = Oprf.getHash(VOPRF_SUITE) as HashID;
+
+const MODE = Oprf.makeMode({ suite: VOPRF_SUITE, mode: Oprf.Mode.VOPRF });
+
 const VOPRF_EXTRA_PARAMS: VOPRFExtraParams = {
     suite: VOPRF_SUITE,
-    group: VOPRF_GROUP,
-    Ne: VOPRF_GROUP.eltSize(),
-    Ns: VOPRF_GROUP.scalarSize(),
-    Nk: Oprf.getOprfSize(VOPRF_SUITE),
-    hash: VOPRF_HASH,
-    dleqParams: {
-        gg: VOPRF_GROUP,
-        hashID: VOPRF_HASH,
-        hash: Oprf.Crypto.hash,
-        dst: '',
-    },
+    group: MODE.group,
+    Ne: MODE.params.sizes.elt,
+    Ns: MODE.params.sizes.scalar,
+    Nk: MODE.params.sizes.output,
+    // Np: MODE.params.sizes.proof,
+    hash: MODE.params.hash,
 } as const;
 
 // Token Type Entry Update:
@@ -67,7 +59,7 @@ export const VOPRF: Readonly<TokenTypeEntry> & VOPRFExtraParams = {
 } as const;
 
 export function keyGen2(): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
-    return generateKeyPair(VOPRF.suite);
+    return MODE.keys.generatePair();
 }
 
 async function getTokenKeyID(publicKey: Uint8Array): Promise<Uint8Array> {
@@ -82,6 +74,7 @@ export class TokenRequest2 {
     //   } TokenRequest;
 
     tokenType: number;
+
     constructor(
         public readonly truncatedTokenKeyId: number,
         public readonly blindedMsg: Uint8Array,
@@ -168,36 +161,35 @@ export class TokenResponse2 {
 }
 
 export function verifyToken2(token: Token, privateKeyIssuer: Uint8Array): Promise<boolean> {
-    const vServer = new VOPRFServer(VOPRF.suite, privateKeyIssuer);
+    const vServer = MODE.makeServer(privateKeyIssuer);
     const authInput = token.authInput.serialize();
     return vServer.verifyFinalize(authInput, token.authenticator);
 }
 
 export class Issuer2 {
-    private vServer: VOPRFServer;
+    private vServer: Server<ModeVoprf>;
 
     constructor(
         public name: string,
         private privateKey: Uint8Array,
         public publicKey: Uint8Array,
     ) {
-        this.vServer = new VOPRFServer(VOPRF.suite, this.privateKey);
+        this.vServer = MODE.makeServer(this.privateKey);
     }
 
     async issue(tokReq: TokenRequest2): Promise<TokenResponse2> {
-        const blindedElt = VOPRF.group.desElt(tokReq.blindedMsg);
-        const evalReq = new EvaluationRequest([blindedElt]);
+        const evalReq = { blinded: [tokReq.blindedMsg] };
         const evaluation = await this.vServer.blindEvaluate(evalReq);
 
         if (evaluation.evaluated.length !== 1) {
             throw new Error('evaluation is of a non-single element');
         }
-        const evaluateMsg = evaluation.evaluated[0].serialize();
+        const evaluateMsg = evaluation.evaluated[0];
 
         if (typeof evaluation.proof === 'undefined') {
             throw new Error('evaluation has no DLEQ proof');
         }
-        const evaluateProof = evaluation.proof.serialize();
+        const evaluateProof = evaluation.proof;
 
         return new TokenResponse2(evaluateMsg, evaluateProof);
     }
@@ -208,23 +200,25 @@ export class Issuer2 {
     }
 }
 
-export class Client2 {
-    private finData?: {
-        vClient: VOPRFClient;
-        authInput: AuthenticatorInput;
-        finData: FinalizeData;
-    };
+interface Client2State {
+    authInput: AuthenticatorInput;
+    finData: FinalizeData;
+}
 
-    async createTokenRequest(
-        tokChl: TokenChallenge,
-        issuerPublicKey: Uint8Array,
-    ): Promise<TokenRequest2> {
+export class Client2 {
+    vClient: Client<ModeVoprf>;
+
+    constructor(private issuerPublicKey: Uint8Array) {
+        this.vClient = MODE.makeClient(issuerPublicKey);
+    }
+
+    async createTokenRequest(tokChl: TokenChallenge): Promise<[TokenRequest2, Client2State]> {
         const nonce = crypto.getRandomValues(new Uint8Array(32));
         const challengeDigest = new Uint8Array(
             await crypto.subtle.digest('SHA-256', tokChl.serialize()),
         );
 
-        const tokenKeyId = await getTokenKeyID(issuerPublicKey);
+        const tokenKeyId = await getTokenKeyID(this.issuerPublicKey);
         const authInput = new AuthenticatorInput(
             VOPRF,
             VOPRF.value,
@@ -234,12 +228,11 @@ export class Client2 {
         );
         const tokenInput = authInput.serialize();
 
-        const vClient = new VOPRFClient(VOPRF.suite, issuerPublicKey);
-        const [finData, evalReq] = await vClient.blind([tokenInput]);
+        const [finData, evalReq] = await this.vClient.blind([tokenInput]);
         if (evalReq.blinded.length !== 1) {
             throw new Error('created a non-single blinded element');
         }
-        const blindedMsg = evalReq.blinded[0].serialize();
+        const blindedMsg = evalReq.blinded[0];
 
         // "truncated_token_key_id" is the least significant byte of the
         // token_key_id in network byte order (in other words, the
@@ -247,27 +240,15 @@ export class Client2 {
         const truncatedTokenKeyId = tokenKeyId[tokenKeyId.length - 1];
         const tokenRequest = new TokenRequest2(truncatedTokenKeyId, blindedMsg);
 
-        this.finData = { vClient, authInput, finData };
-
-        return tokenRequest;
+        return [tokenRequest, { authInput, finData }];
     }
 
-    async finalize(tokRes: TokenResponse2): Promise<Token> {
-        if (!this.finData) {
-            throw new Error('no token request was created yet');
-        }
-
-        const proof = DLEQProof.deserialize(VOPRF.dleqParams, tokRes.evaluateProof);
-        const evaluateMsg = VOPRF.group.desElt(tokRes.evaluateMsg);
-        const evaluation = new Evaluation(Oprf.Mode.VOPRF, [evaluateMsg], proof);
-        const [authenticator] = await this.finData.vClient.finalize(
-            this.finData.finData,
-            evaluation,
-        );
-        const token = new Token(VOPRF, this.finData.authInput, authenticator);
-
-        this.finData = undefined;
-
-        return token;
+    async finalize(tokRes: TokenResponse2, state: Client2State): Promise<Token> {
+        const [authenticator] = await this.vClient.finalize(state.finData, {
+            evaluated: [tokRes.evaluateMsg],
+            mode: Oprf.Mode.VOPRF,
+            proof: tokRes.evaluateProof,
+        });
+        return new Token(VOPRF, state.authInput, authenticator);
     }
 }

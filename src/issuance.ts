@@ -99,10 +99,10 @@ export async function issuanceProtocolPriv(
     header: WWWAuthenticateHeader,
 ): Promise<AuthorizationHeader> {
     const issuerUrl = await getIssuerUrl(header.challenge.issuerName);
-    const client = new Client2();
-    const tokReq = await client.createTokenRequest(header.challenge, header.tokenKey);
+    const client = new Client2(header.tokenKey);
+    const [tokReq, state] = await client.createTokenRequest(header.challenge);
     const { tokResBytes } = await sendTokenRequest(tokReq.serialize(), issuerUrl);
     const tokRes = TokenResponse2.deserialize(tokResBytes);
-    const token = await client.finalize(tokRes);
+    const token = await client.finalize(tokRes, state);
     return new AuthorizationHeader(token);
 }

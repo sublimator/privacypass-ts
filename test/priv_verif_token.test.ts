@@ -2,7 +2,6 @@
 // Licensed under the Apache-2.0 license found in the LICENSE file or at https://opensource.org/licenses/Apache-2.0
 
 import { jest } from '@jest/globals';
-import { VOPRFClient } from '@cloudflare/voprf-ts';
 
 import {
     Client2,
@@ -33,12 +32,13 @@ test.each(vectors)('PrivateVerifiable-Vector-%#', async (v: Vectors) => {
 
     // Mock for randomized operations.
     jest.spyOn(crypto, 'getRandomValues').mockReturnValueOnce(nonce);
-    jest.spyOn(VOPRFClient.prototype, 'randomBlinder').mockReturnValueOnce(
+
+    const client = new Client2(publicKey);
+    jest.spyOn(client['vClient'].spyHandle.blinds, 'randomBlinder').mockReturnValueOnce(
         Promise.resolve(TOKEN_TYPES.VOPRF.group.desScalar(blind)),
     );
 
-    const client = new Client2();
-    const tokReq = await client.createTokenRequest(tokChl, publicKey);
+    const [tokReq, state] = await client.createTokenRequest(tokChl);
     testSerialize(TokenRequest2, tokReq);
 
     const tokReqSer = tokReq.serialize();
@@ -57,7 +57,7 @@ test.each(vectors)('PrivateVerifiable-Vector-%#', async (v: Vectors) => {
         hexToUint8(v.token_response).slice(0, VOPRF.Ne),
     );
 
-    const token = await client.finalize(tokRes);
+    const token = await client.finalize(tokRes, state);
     testSerializeType(TOKEN_TYPES.VOPRF, Token, token);
 
     const tokenSer = token.serialize();

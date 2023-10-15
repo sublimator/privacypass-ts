@@ -1,7 +1,7 @@
 // Copyright (c) 2023 Cloudflare, Inc.
 // Licensed under the Apache-2.0 license found in the LICENSE file or at https://opensource.org/licenses/Apache-2.0
 
-import { Client2, Issuer2, TOKEN_TYPES, TokenChallenge, keyGen2 } from '../src/index.js';
+import { Client2, Issuer2, keyGen2, TOKEN_TYPES, TokenChallenge } from '../src/index.js';
 
 export async function privateVerifiableTokens(): Promise<void> {
     // Protocol Setup
@@ -12,10 +12,9 @@ export async function privateVerifiableTokens(): Promise<void> {
     // [ Issuer ] creates a key pair.
     const keys = await keyGen2();
     const issuer = new Issuer2('issuer.com', keys.privateKey, keys.publicKey);
-    const pkIssuer = issuer.publicKey;
 
     // [ Client ] creates a state.
-    const client = new Client2();
+    const client = new Client2(issuer.publicKey);
 
     // Online Protocol
     //
@@ -30,13 +29,13 @@ export async function privateVerifiableTokens(): Promise<void> {
     //     +-- TokenChallenge -->|                   |           |
     //     |                     |<== Attestation ==>|           |
     //     |                     |                   |           |
-    const tokReq = await client.createTokenRequest(tokChl, pkIssuer);
+    const [tokReq, state] = await client.createTokenRequest(tokChl);
     //     |                     +--------- TokenRequest ------->|
     //     |                     |                   |           |
     const tokRes = await issuer.issue(tokReq);
     //     |                     |<-------- TokenResponse -------+
     //     |                     |                   |           |
-    const token = await client.finalize(tokRes);
+    const token = await client.finalize(tokRes, state);
     //     |<-- Request+Token ---+                   |           |
     //     |                     |                   |           |
     const isValid = await issuer.verify(token);

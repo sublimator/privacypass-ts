@@ -23,28 +23,28 @@ import {
 export interface VOPRFExtraParams {
     suite: SuiteID;
     group: Group;
+    hash: HashID;
     Ne: number;
     Ns: number;
     Nk: number;
-    // Np: number;
-    hash: HashID;
+    Np: number;
 }
 
-const VOPRF_SUITE = Oprf.Suite.P384_SHA384;
-
 const MODE = Oprf.makeMode({
-    suite: VOPRF_SUITE,
+    suite: Oprf.Suite.P384_SHA384,
     mode: Oprf.Mode.VOPRF,
 });
 
+const SIZES = MODE.params.sizes;
+
 const VOPRF_EXTRA_PARAMS: VOPRFExtraParams = {
-    suite: VOPRF_SUITE,
+    suite: MODE.suite,
     group: MODE.group,
-    Ne: MODE.params.sizes.elt,
-    Ns: MODE.params.sizes.scalar,
-    Nk: MODE.params.sizes.output,
-    // Np: MODE.params.sizes.proof,
     hash: MODE.params.hash,
+    Ne: SIZES.elt,
+    Ns: SIZES.scalar,
+    Nk: SIZES.output,
+    Np: SIZES.proof,
 } as const;
 
 // Token Type Entry Update:
@@ -141,7 +141,7 @@ export class TokenResponse2 {
         if (evaluateMsg.length !== VOPRF.Ne) {
             throw new Error('evaluate_msg has invalid size');
         }
-        if (evaluateProof.length !== 2 * VOPRF.Ns) {
+        if (evaluateProof.length !== VOPRF.Np) {
             throw new Error('evaluate_proof has invalid size');
         }
     }
@@ -152,7 +152,7 @@ export class TokenResponse2 {
         const evaluateMsg = new Uint8Array(bytes.slice(offset, offset + len));
         offset += len;
 
-        len = 2 * VOPRF.Ns;
+        len = VOPRF.Np;
         const evaluateProof = new Uint8Array(bytes.slice(offset, offset + len));
 
         return new TokenResponse2(evaluateMsg, evaluateProof);
